@@ -1,0 +1,50 @@
+# Load libraries (suppress warnings)
+suppressWarnings({
+  library(dplyr)
+})
+
+# Select and load CSV file
+data <- read.csv(file.choose())
+
+# Convert group column explicitly to factor
+data$group <- as.factor(data$group)
+
+# Get all group names
+all_groups <- levels(data$group)
+
+# Get target groups excluding "siControl"
+target_groups <- setdiff(all_groups, "siControl")
+
+# Storage for results
+p_values <- c()
+comparisons <- c()
+
+for (g in target_groups) {
+  # Extract data for siControl and group g only
+  subset_data <- subset(data, group %in% c("siControl", g))
+  
+  # Refactor to 2 groups
+  subset_data$group <- factor(subset_data$group)
+  
+  # Check if group count is valid and perform test
+  if (length(levels(subset_data$group)) == 2) {
+    test <- wilcox.test(value ~ group, data = subset_data)
+    p_values <- c(p_values, test$p.value)
+    comparisons <- c(comparisons, paste("siControl vs", g))
+  } else {
+    warning(paste("Skipping group:", g, "- Missing data for one of the groups."))
+  }
+}
+
+# Multiple testing correction (Benjamini-Hochberg)
+adjusted_p <- p.adjust(p_values, method = "BH")
+
+# Combine results into a data frame
+results <- data.frame(
+  Comparison = comparisons,
+  Raw_P = p_values,
+  Adjusted_P = adjusted_p
+)
+
+# Display results
+print(results)

@@ -1,0 +1,91 @@
+# Required packages
+library(ggplot2)
+library(RColorBrewer)
+
+# --- Select CSV file via dialog ---
+file_path <- file.choose()  # Opens file dialog
+df <- read.csv(file_path, stringsAsFactors = FALSE)
+
+# --- Preserve original order of groups as they appear in the CSV ---
+df$group <- factor(df$group, levels = unique(df$group))
+
+# --- Y-axis settings (Base range -5 to 10 with 5% expansion on both sides) ---
+y_min   <- -5
+y_max   <- 10
+y_range <- y_max - y_min          # 15
+expand_ratio <- 0.05               # 5%
+
+plot_y_min <- y_min - y_range * expand_ratio   # -6.5
+plot_y_max <- y_max + y_range * expand_ratio   # 11.5
+
+wrap_label <- function(x, width = 5) {
+  sapply(x, function(lbl) {
+    # Return as-is if shorter than width
+    n <- nchar(lbl, type = "chars")
+    if (n <= width) return(lbl)
+    
+    # Split every 'width' characters and join with "\n"
+    starts <- seq(1, n, by = width)
+    parts <- substring(lbl, starts, pmin(starts + width - 1, n))
+    paste(parts, collapse = "\n")
+  })
+}
+
+# --- Violin plot + Data points ---
+p <- ggplot(df, aes(x = group, y = value)) +
+  # Violin plot (colored by group)
+  geom_violin(aes(fill = group), trim = FALSE, width = 1.0) +
+  # Data points (grey)
+  geom_jitter(width = 0.10, color = "grey15", size = 1.0, alpha = 0.9) +
+  # Color palette
+  scale_fill_brewer(palette = "Set3") +
+  # Median line
+  stat_summary(fun = median, geom = "crossbar", width = 0.5, color = "black") + # Median line
+  # Y-axis limits: centered at -5 to 10 with margin padding
+  coord_cartesian(ylim = c(plot_y_min, plot_y_max)) +
+  scale_x_discrete(labels = function(x) wrap_label(x, width = 7)) +
+  scale_y_continuous(breaks = seq(y_min, y_max, by = 5)) +
+  labs(x = "", y = "Deformation (µm)") +
+  theme_classic() +
+  # --- Remove legend ---
+  theme(legend.position = "none",
+        axis.title.x = element_text(family = "Arial", colour = "black", size = 12, face='bold'),
+        axis.title.y = element_text(family = "Arial", colour = "black", size = 12, face='bold'),
+        axis.text.x  = element_text(family = "Arial", colour = "black", size = 10, face='bold'),
+        axis.text.y  = element_text(family = "Arial", colour = "black", size = 10, face='bold'))
+
+# Display plot on screen
+print(p)
+
+# --- Save to Desktop (width dynamically adjusts based on group count) ---
+
+# Estimate Desktop directory path based on OS
+desktop_dir <- if (Sys.info()[["sysname"]] == "Windows") {
+  file.path(Sys.getenv("USERPROFILE"), "Desktop")
+} else {
+  file.path(path.expand("~"), "Desktop")
+}
+
+# Fallback check (save to current working directory if Desktop does not exist)
+if (!dir.exists(desktop_dir)) {
+  desktop_dir <- getwd()
+}
+
+# Calculate plot width based on group count (keeps width per group constant)
+n_groups <- length(levels(df$group))      # Number of groups
+width_per_group <- 0.4                    # Width per group (e.g., 0.8 inch per group)
+plot_width <- max(2, n_groups * width_per_group)  # Set minimum width (adjust as needed)
+
+# Output file path
+output_file <- file.path(desktop_dir, "violin_plot.png")
+
+# Save plot via ggsave
+ggsave(
+  filename = output_file,
+  plot     = p,
+  width    = plot_width,   # Width scales with the number of groups
+  height   = 2.5,          # Fixed height (adjust as needed)
+  dpi      = 300
+)
+
+cat("Plot saved to: ", output_file, "\n")

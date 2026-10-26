@@ -1,0 +1,114 @@
+# Required packages
+# install.packages(c("ggplot2", "dplyr", "readr"))
+library(ggplot2)
+library(dplyr)
+library(readr)
+
+# ====== Settings ======
+csv_path   <- file.choose()   # <- Change to your CSV path
+line_width <- 0.7         # <- Adjust line width (bar outline, error bars, axes, etc.)
+point_size <- 1.5         # <- Data point size
+jitter_w   <- 0.10        # <- Jitter width for data points (horizontal)
+
+# ====== Load Data ======
+df <- read_csv(csv_path, col_types = cols(
+  group = col_character(),
+  value = col_double()
+))
+
+# Convert group to factor to preserve original order (optional)
+df <- df %>% mutate(group = factor(group, levels = unique(group)))
+
+wrap_label <- function(x, width = 5) {
+  sapply(x, function(lbl) {
+    # Return as-is if shorter than width
+    n <- nchar(lbl, type = "chars")
+    if (n <= width) return(lbl)
+    
+    # Split every 'width' characters and join with "\n"
+    starts <- seq(1, n, by = width)
+    parts <- substring(lbl, starts, pmin(starts + width - 1, n))
+    paste(parts, collapse = "\n")
+  })
+}
+
+# ====== Summary Statistics (Mean and SD) ======
+sum_df <- df %>%
+  group_by(group) %>%
+  summarise(
+    mean = mean(value, na.rm = TRUE),
+    sd   = sd(value, na.rm = TRUE),
+    n    = sum(!is.na(value)),
+    .groups = "drop"
+  )
+
+# Set SD to 0 if NA (e.g., when n = 1) to enable error bar rendering
+sum_df <- sum_df %>%
+  mutate(sd = ifelse(is.na(sd), 0, sd))
+
+# ====== Plotting ======
+p <- ggplot(sum_df, aes(x = group, y = mean)) +
+  # Bars (no fill, black outline)
+  geom_col(fill = NA, color = "black", linewidth = line_width) +
+  # Error bars (Mean ± SD)
+  geom_errorbar(
+    aes(ymin = mean - sd, ymax = mean + sd),
+    width = 0.18, color = "black", linewidth = line_width
+  ) +
+  # Raw data points (jittered horizontally)
+  geom_point(
+    data = df,
+    aes(x = group, y = value),
+    position = position_jitter(width = jitter_w, height = 0),
+    color = "black", size = point_size
+  ) +
+  # Aesthetic adjustments (black lines, line width applied)
+  theme_classic(base_size = 12) +
+  theme(
+    axis.line   = element_line(color = "black", linewidth = line_width),
+    axis.ticks  = element_line(color = "black", linewidth = line_width),
+    axis.title.y = element_text(family = "Arial", colour = "black", size = 12, face='bold'),
+    axis.text.x  = element_text(family = "Arial", colour = "black", size = 8, face='bold'),
+    axis.text.y  = element_text(family = "Arial", colour = "black", size = 8, face='bold')
+  ) +
+  scale_x_discrete(labels = function(x) wrap_label(x, width = 9)) +
+  scale_y_continuous(
+    limits = c(0, 100),
+    expand = expansion(mult = c(0, 0))
+  ) +
+  coord_cartesian(clip = "off") +
+  theme(
+    plot.margin = margin(t = 5.5, r = 5.5, b = 12, l = 5.5)  # Slightly widen bottom margin
+  ) +
+  labs(x = "", y = "Bleb induction (%)")
+
+print(p)
+
+# Estimate Desktop directory path based on OS
+desktop_dir <- if (Sys.info()[["sysname"]] == "Windows") {
+  file.path(Sys.getenv("USERPROFILE"), "Desktop")
+} else {
+  file.path(path.expand("~"), "Desktop")
+}
+
+# Fallback check (save to current working directory if Desktop does not exist)
+if (!dir.exists(desktop_dir)) {
+  desktop_dir <- getwd()
+}
+
+# Calculate plot width based on group count (keeps width per group constant)
+n_groups <- length(levels(df$group))      # Number of groups
+width_per_group <- 0.4                    # Width per group in inches
+plot_width <- max(3, n_groups * width_per_group)  # Set minimum width (adjust as needed)
+
+# Output file path
+output_file <- file.path(desktop_dir, "bar_plot.png")
+
+# Save plot via ggsave
+ggsave(
+  filename = output_file,
+  plot     = p,
+  width    = plot_width,   # Width scales with the number of groups
+  height   = 2.5,          # Fixed height (adjust as needed)
+  dpi      = 300
+)

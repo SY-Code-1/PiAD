@@ -1,0 +1,98 @@
+# Required packages
+library(ggplot2)
+library(RColorBrewer)
+library(grid)  # For unit()
+
+# --- Select CSV file via dialog ---
+file_path <- file.choose()
+df <- read.csv(file_path, stringsAsFactors = FALSE)
+
+# --- Preserve original order of groups as they appear in the CSV ---
+df$group <- factor(df$group, levels = unique(df$group))
+
+# --- Y-axis settings ---
+y_min <- 0
+y_max <- 3.2
+
+wrap_label <- function(x, width = 7) {
+  sapply(x, function(lbl) {
+    n <- nchar(lbl, type = "chars")
+    if (n <= width) return(lbl)
+    starts <- seq(1, n, by = width)
+    parts  <- substring(lbl, starts, pmin(starts + width - 1, n))
+    paste(parts, collapse = "\n")
+  })
+}
+
+# --- Calculate quartiles (Q1, Median, Q3) ---
+sp <- split(df$value, df$group)
+sum_df <- data.frame(
+  group = factor(names(sp), levels = levels(df$group)),
+  n     = sapply(sp, function(v) sum(!is.na(v))),
+  mean  = sapply(sp, function(v) mean(v, na.rm = TRUE)),
+  q1    = sapply(sp, function(v) unname(quantile(v, 0.25, na.rm = TRUE))),
+  med   = sapply(sp, function(v) median(v, na.rm = TRUE)),
+  q3    = sapply(sp, function(v) unname(quantile(v, 0.75, na.rm = TRUE)))
+)
+
+# --- Scatter plot + Interquartile Range (IQR) + Median line ---
+p <- ggplot(df, aes(x = group, y = value)) +
+  # Data points
+  geom_jitter(color = "grey30", width = 0.12, size = 1.2, alpha = 0.9) +
+  # Q1-Q3 (IQR) error bars with caps
+  geom_errorbar(
+    data = sum_df,
+    aes(x = group, ymin = q1, ymax = q3),
+    width = 0.30, linewidth = 1.0, color = "black",
+    inherit.aes = FALSE
+  ) +
+  # Median (thick horizontal line)
+  geom_crossbar(
+    data = sum_df,
+    aes(x = group, y = med, ymin = med, ymax = med),
+    width = 0.50, linewidth = 0.50, color = "black",
+    inherit.aes = FALSE
+  ) +
+  scale_color_brewer(palette = "Set1") +
+  scale_x_discrete(labels = function(x) wrap_label(x, width = 7)) +
+  coord_cartesian(ylim = c(y_min, y_max)) +
+  scale_y_continuous(breaks = seq(y_min, y_max, by = 1.0),   # Ticks at 1.0 intervals
+                     limits = c(y_min, y_max)) +
+  labs(y = "Intensity ratio (cortex/cytosol)") +
+  theme_classic() +
+  theme(
+    legend.position = "none",
+    axis.line = element_line(linewidth = 2.0, colour = "black"),
+    axis.ticks = element_line(linewidth = 2.0, colour = "black"),
+    axis.ticks.length = unit(0.25, "cm"),
+    axis.title.x = element_text(family = "Arial", colour = "black", size = 12, face = "bold"),
+    axis.title.y = element_text(family = "Arial", colour = "black", size = 12, face = "bold"),
+    axis.text.x  = element_text(family = "Arial", colour = "black", size = 11, face = "bold"),
+    axis.text.y  = element_text(family = "Arial", colour = "black", size = 14, face = "bold")
+  )
+
+print(p)
+
+# --- Save to Desktop (width dynamically adjusts based on group count) ---
+desktop_dir <- if (Sys.info()[["sysname"]] == "Windows") {
+  file.path(Sys.getenv("USERPROFILE"), "Desktop")
+} else {
+  file.path(path.expand("~"), "Desktop")
+}
+if (!dir.exists(desktop_dir)) desktop_dir <- getwd()
+
+n_groups <- length(levels(df$group))
+width_per_group <- 0.6
+plot_width <- max(4, n_groups * width_per_group)
+
+output_file <- file.path(desktop_dir, "quartile_plot.png")
+
+ggsave(
+  filename = output_file,
+  plot     = p,
+  width    = plot_width,
+  height   = 3,
+  dpi      = 300
+)
+
+cat("Plot saved to: ", output_file, "\n")
